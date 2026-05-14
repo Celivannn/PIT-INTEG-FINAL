@@ -62,24 +62,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-# ─── Database ───────────────────────────────────────────────────────────────
-# CHANGED: MySQL to CockroachDB
+# ─── Database (SQLite — no server required) ───────────────────────────────────
 DATABASES = {
     'default': {
-        'ENGINE': 'django_cockroachdb',  # Changed from 'django.db.backends.mysql'
-        'NAME': config('DB_NAME', default='hotel_db'),
-        'USER': config('DB_USER', default='root'),
-        'PASSWORD': config('DB_PASSWORD', default=''),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default='26257'),  # Changed from '3306' to '26257'
-        # REMOVED: 'OPTIONS' with charset - not needed for CockroachDB
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
-# ─── Custom User Model ───────────────────────────────────────────────────────
+# ─── Custom User Model ────────────────────────────────────────────────────────
 AUTH_USER_MODEL = 'users.User'
 
-# ─── REST Framework ──────────────────────────────────────────────────────────
+# ─── REST Framework ───────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -91,7 +85,7 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
 }
 
-# ─── SimpleJWT ───────────────────────────────────────────────────────────────
+# ─── SimpleJWT ────────────────────────────────────────────────────────────────
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(
         minutes=config('ACCESS_TOKEN_LIFETIME_MINUTES', default=15, cast=int)
@@ -106,17 +100,17 @@ SIMPLE_JWT = {
     'AUTH_COOKIE': 'refresh_token',
     'AUTH_COOKIE_HTTP_ONLY': True,
     'AUTH_COOKIE_SAMESITE': 'Lax',
-    'AUTH_COOKIE_SECURE': False,  # Set True in production with HTTPS
+    'AUTH_COOKIE_SECURE': False,
 }
 
-# ─── CORS ────────────────────────────────────────────────────────────────────
+# ─── CORS ─────────────────────────────────────────────────────────────────────
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
     default='http://localhost:3000,http://localhost:3001'
 ).split(',')
-CORS_ALLOW_CREDENTIALS = True  # Required for HttpOnly cookie to be sent
+CORS_ALLOW_CREDENTIALS = True
 
-# ─── Password Validation ─────────────────────────────────────────────────────
+# ─── Password Validation ──────────────────────────────────────────────────────
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -124,13 +118,13 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# ─── Internationalization ────────────────────────────────────────────────────
+# ─── Internationalization ─────────────────────────────────────────────────────
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Asia/Manila'
 USE_I18N = True
 USE_TZ = False
 
-# ─── Static & Media Files ────────────────────────────────────────────────────
+# ─── Static & Media Files ─────────────────────────────────────────────────────
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 

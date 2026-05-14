@@ -5,14 +5,17 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 from .models import User
 from .serializers import RegisterSerializer, UserProfileSerializer
 from .permissions import IsAdmin
 
+GOOGLE_CLIENT_ID = '980255551628-8d082bil9atm1fd8b8m2t03v60pi3k2j.apps.googleusercontent.com'
+
 
 class RegisterView(generics.CreateAPIView):
-    """Public endpoint — creates customer accounts only."""
     queryset           = User.objects.all()
     serializer_class   = RegisterSerializer
     permission_classes = [AllowAny]
@@ -28,11 +31,6 @@ class RegisterView(generics.CreateAPIView):
 
 
 class LoginView(APIView):
-    """
-    Authenticates user.
-    - Web: returns access token in body, sets refresh in HttpOnly cookie.
-    - Mobile: returns BOTH access and refresh tokens in body.
-    """
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -55,7 +53,7 @@ class LoginView(APIView):
 
         response = Response({
             'access':  access,
-            'refresh': str(refresh),   # included for mobile clients
+            'refresh': str(refresh),
             'user': {
                 'id':        user.id,
                 'email':     user.email,
@@ -64,7 +62,6 @@ class LoginView(APIView):
             }
         })
 
-        # Also set HttpOnly cookie for web clients
         jwt_settings = settings.SIMPLE_JWT
         response.set_cookie(
             key      = jwt_settings.get('AUTH_COOKIE', 'refresh_token'),
@@ -77,18 +74,83 @@ class LoginView(APIView):
         return response
 
 
+class GoogleLoginView(APIView):
+    """
+    Accepts a Google ID token from web (credential) or
+    access token from mobile (expo-auth-session).
+    Creates the user account automatically if first login.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        token      = request.data.get('token')
+        email      = request.data.get('email')
+        full_name  = request.data.get('name', '')
+
+        if not token:
+            return Response({'detail': 'Token required.'}, status=400)
+
+        # ── Web: verify Google ID token ──────────────────────────────────────
+        if not email:
+            try:
+                idinfo    = id_token.verify_oauth2_token(
+                    token, google_requests.Request(), GOOGLE_CLIENT_ID
+                )
+                email     = idinfo.get('email')
+                full_name = idinfo.get('name', '')
+            except ValueError as e:
+                return Response({'detail': f'Invalid Google token: {str(e)}'}, status=401)
+
+        if not email:
+            return Response({'detail': 'Email not provided.'}, status=400)
+
+        # ── Get or create user ───────────────────────────────────────────────
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                'full_name': full_name,
+                'role':      'customer',
+                'is_active': True,
+            }
+        )
+
+        if not created and not user.full_name and full_name:
+            user.full_name = full_name
+            user.save(update_fields=['full_name'])
+
+        # ── Generate JWT ─────────────────────────────────────────────────────
+        refresh = RefreshToken.for_user(user)
+
+        response = Response({
+            'access':  str(refresh.access_token),
+            'refresh': str(refresh),
+            'user': {
+                'id':        user.id,
+                'email':     user.email,
+                'full_name': user.full_name,
+                'role':      user.role,
+            },
+            'created': created,
+        })
+
+        jwt_settings = settings.SIMPLE_JWT
+        response.set_cookie(
+            key      = jwt_settings.get('AUTH_COOKIE', 'refresh_token'),
+            value    = str(refresh),
+            httponly = True,
+            samesite = 'Lax',
+            secure   = False,
+            max_age  = int(jwt_settings['REFRESH_TOKEN_LIFETIME'].total_seconds()),
+        )
+        return response
+
+
 class LogoutView(APIView):
-    """
-    Blacklists refresh token.
-    Accepts token from cookie (web) or request body (mobile).
-    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         jwt_settings  = settings.SIMPLE_JWT
         cookie_name   = jwt_settings.get('AUTH_COOKIE', 'refresh_token')
-
-        # Try body first (mobile), fallback to cookie (web)
         refresh_token = request.data.get('refresh') or request.COOKIES.get(cookie_name)
 
         if refresh_token:
@@ -104,16 +166,11 @@ class LogoutView(APIView):
 
 
 class TokenRefreshCookieView(APIView):
-    """
-    Silent token refresh.
-    Accepts refresh token from HttpOnly cookie (web) or request body (mobile).
-    """
     permission_classes = [AllowAny]
 
     def post(self, request):
         jwt_settings  = settings.SIMPLE_JWT
         cookie_name   = jwt_settings.get('AUTH_COOKIE', 'refresh_token')
-
         refresh_token = request.data.get('refresh') or request.COOKIES.get(cookie_name)
 
         if not refresh_token:
@@ -122,19 +179,15 @@ class TokenRefreshCookieView(APIView):
         try:
             refresh = RefreshToken(refresh_token)
             access  = str(refresh.access_token)
-
-            response = Response({
-                'access':  access,
-                'refresh': str(refresh),
-            })
+            response = Response({'access': access, 'refresh': str(refresh)})
 
             if jwt_settings.get('ROTATE_REFRESH_TOKENS', False):
                 response.set_cookie(
                     key      = cookie_name,
                     value    = str(refresh),
-                    httponly = jwt_settings.get('AUTH_COOKIE_HTTP_ONLY', True),
-                    samesite = jwt_settings.get('AUTH_COOKIE_SAMESITE', 'Lax'),
-                    secure   = jwt_settings.get('AUTH_COOKIE_SECURE', False),
+                    httponly = True,
+                    samesite = 'Lax',
+                    secure   = False,
                     max_age  = int(jwt_settings['REFRESH_TOKEN_LIFETIME'].total_seconds()),
                 )
             return response
@@ -144,7 +197,6 @@ class TokenRefreshCookieView(APIView):
 
 
 class ProfileView(generics.RetrieveUpdateAPIView):
-    """Logged-in user can view and update their own profile."""
     serializer_class   = UserProfileSerializer
     permission_classes = [IsAuthenticated]
 

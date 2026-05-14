@@ -10,13 +10,58 @@ const STATUS_TRANSITIONS = {
   cancelled:   [],
 };
 
-const STATUS_LABELS = { pending: 'Pending', confirmed: 'Confirmed', checked_in: 'Checked In', checked_out: 'Checked Out', cancelled: 'Cancelled' };
+const STATUS_LABELS = {
+  pending:     'Pending',
+  confirmed:   'Confirmed',
+  checked_in:  'Checked In',
+  checked_out: 'Checked Out',
+  cancelled:   'Cancelled',
+};
+
+const PERIOD_OPTIONS = [
+  { value: '',      label: 'All time' },
+  { value: 'day',   label: 'Today' },
+  { value: 'week',  label: 'This week' },
+  { value: 'month', label: 'This month' },
+];
+
+function getDateRange(period) {
+  if (!period) return null;
+
+  const now = new Date();
+  const start = new Date(now);
+  const end   = new Date(now);
+
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+
+  if (period === 'day') {
+    return { start, end };
+  }
+
+  if (period === 'week') {
+    const day = start.getDay(); // 0 = Sunday
+    start.setDate(start.getDate() - day);
+    end.setDate(end.getDate() + (6 - day));
+    return { start, end };
+  }
+
+  if (period === 'month') {
+    start.setDate(1);
+    end.setMonth(end.getMonth() + 1);
+    end.setDate(0); // last day of current month
+    return { start, end };
+  }
+
+  return null;
+}
 
 export default function ReservationsPage() {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [periodFilter, setPeriodFilter] = useState('');
   const [updating, setUpdating]         = useState(null);
   const [selected, setSelected]         = useState(null);
 
@@ -25,8 +70,18 @@ export default function ReservationsPage() {
     const params = {};
     if (search)       params.search = search;
     if (statusFilter) params.status = statusFilter;
-    getReservations(params).then(r => setReservations(r.data.results || r.data)).finally(() => setLoading(false));
-  }, [search, statusFilter]);
+
+    const range = getDateRange(periodFilter);
+    if (range) {
+      // Format as YYYY-MM-DD for the API
+      params.check_in_after  = range.start.toISOString().split('T')[0];
+      params.check_in_before = range.end.toISOString().split('T')[0];
+    }
+
+    getReservations(params)
+      .then(r => setReservations(r.data.results || r.data))
+      .finally(() => setLoading(false));
+  }, [search, statusFilter, periodFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -53,19 +108,58 @@ export default function ReservationsPage() {
 
       {/* Filters */}
       <div className="card" style={{ padding: '16px 20px', marginBottom: 20, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input placeholder="Search booking ref, guest, room..." value={search} onChange={e => setSearch(e.target.value)}
-          style={{ flex: 1, minWidth: 220, padding: '9px 12px', border: '1.5px solid var(--gray-200)', borderRadius: 8, fontSize: '0.85rem', outline: 'none' }} />
-        <div style={{ display: 'flex', gap: 8 }}>
-          {['', 'pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled'].map(s => (
-            <button key={s} onClick={() => setStatusFilter(s)} style={{
-              padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600,
-              background: statusFilter === s ? 'var(--blue)' : 'var(--gray-100)',
-              color: statusFilter === s ? 'white' : 'var(--gray-600)',
-              transition: 'all 0.2s', textTransform: 'capitalize',
-            }}>{s ? s.replace('_', ' ') : 'All'}</button>
+        <input
+          placeholder="Search booking ref, guest, room..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ flex: 1, minWidth: 220, padding: '9px 12px', border: '1.5px solid var(--gray-200)', borderRadius: 8, fontSize: '0.85rem', outline: 'none' }}
+        />
+
+        {/* Period filter */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Period
+          </span>
+          {PERIOD_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setPeriodFilter(opt.value)}
+              style={{
+                padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                fontSize: '0.78rem', fontWeight: 600, transition: 'all 0.2s',
+                background: periodFilter === opt.value ? '#7C3AED' : 'var(--gray-100)',
+                color:      periodFilter === opt.value ? 'white'   : 'var(--gray-600)',
+              }}
+            >
+              {opt.label}
+            </button>
           ))}
         </div>
-        <span style={{ fontSize: '0.82rem', color: 'var(--gray-400)', marginLeft: 'auto' }}>{reservations.length} results</span>
+
+        {/* Divider */}
+        <div style={{ width: 1, height: 24, background: 'var(--gray-200)' }} />
+
+        {/* Status filter */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {['', 'pending', 'confirmed', 'checked_in', 'checked_out', 'cancelled'].map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              style={{
+                padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                fontSize: '0.78rem', fontWeight: 600, transition: 'all 0.2s', textTransform: 'capitalize',
+                background: statusFilter === s ? 'var(--blue)' : 'var(--gray-100)',
+                color:      statusFilter === s ? 'white'       : 'var(--gray-600)',
+              }}
+            >
+              {s ? s.replace('_', ' ') : 'All'}
+            </button>
+          ))}
+        </div>
+
+        <span style={{ fontSize: '0.82rem', color: 'var(--gray-400)', marginLeft: 'auto' }}>
+          {reservations.length} results
+        </span>
       </div>
 
       {/* Table */}
@@ -94,7 +188,11 @@ export default function ReservationsPage() {
               <tbody>
                 {reservations.map(r => (
                   <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setSelected(r)}>
-                    <td><span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.82rem', color: 'var(--blue)' }}>{r.booking_ref}</span></td>
+                    <td>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.82rem', color: 'var(--blue)' }}>
+                        {r.booking_ref}
+                      </span>
+                    </td>
                     <td>
                       <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{r.customer_name}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--gray-400)' }}>{r.customer_email}</div>
@@ -117,9 +215,13 @@ export default function ReservationsPage() {
                       {STATUS_TRANSITIONS[r.status]?.length > 0 ? (
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           {STATUS_TRANSITIONS[r.status].map(next => (
-                            <button key={next} className="btn btn-sm btn-outline" disabled={updating === r.id}
+                            <button
+                              key={next}
+                              className="btn btn-sm btn-outline"
+                              disabled={updating === r.id}
                               onClick={() => handleStatusChange(r.id, next)}
-                              style={{ fontSize: '0.72rem', padding: '5px 10px', textTransform: 'capitalize' }}>
+                              style={{ fontSize: '0.72rem', padding: '5px 10px', textTransform: 'capitalize' }}
+                            >
                               {next.replace('_', ' ')}
                             </button>
                           ))}
@@ -140,7 +242,10 @@ export default function ReservationsPage() {
       {selected && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 500, display: 'flex' }} onClick={() => setSelected(null)}>
           <div style={{ flex: 1, background: 'rgba(0,0,0,0.4)' }} />
-          <div style={{ width: 420, background: 'white', height: '100%', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.15)' }} onClick={e => e.stopPropagation()}>
+          <div
+            style={{ width: 420, background: 'white', height: '100%', overflowY: 'auto', boxShadow: '-8px 0 32px rgba(0,0,0,0.15)' }}
+            onClick={e => e.stopPropagation()}
+          >
             <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--navy)' }}>Reservation Detail</h2>
               <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: '1.2rem', color: 'var(--gray-400)', cursor: 'pointer' }}>✕</button>
@@ -151,16 +256,16 @@ export default function ReservationsPage() {
                 <span className={`badge badge-${selected.status}`}>{selected.status.replace('_', ' ')}</span>
               </div>
               {[
-                ['Guest', selected.customer_name],
-                ['Email', selected.customer_email],
-                ['Room', `Room ${selected.room?.room_number} (${selected.room?.room_type?.name})`],
-                ['Check In', selected.check_in],
-                ['Check Out', selected.check_out],
-                ['Nights', selected.nights],
-                ['Guests', selected.guests],
+                ['Guest',      selected.customer_name],
+                ['Email',      selected.customer_email],
+                ['Room',       `Room ${selected.room?.room_number} (${selected.room?.room_type?.name})`],
+                ['Check In',   selected.check_in],
+                ['Check Out',  selected.check_out],
+                ['Nights',     selected.nights],
+                ['Guests',     selected.guests],
                 ['Price/Night', `₱${Number(selected.price_per_night).toLocaleString()}`],
-                ['Total', `₱${Number(selected.total_price).toLocaleString()}`],
-                ['Booked On', new Date(selected.created_at).toLocaleString()],
+                ['Total',      `₱${Number(selected.total_price).toLocaleString()}`],
+                ['Booked On',  new Date(selected.created_at).toLocaleString()],
               ].map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--gray-100)', fontSize: '0.875rem' }}>
                   <span style={{ color: 'var(--gray-400)', fontWeight: 500 }}>{k}</span>
@@ -169,7 +274,9 @@ export default function ReservationsPage() {
               ))}
               {STATUS_TRANSITIONS[selected.status]?.length > 0 && (
                 <div style={{ marginTop: 20 }}>
-                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Update Status</div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+                    Update Status
+                  </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {STATUS_TRANSITIONS[selected.status].map(next => (
                       <button key={next} className="btn btn-primary btn-sm" onClick={() => handleStatusChange(selected.id, next)} style={{ textTransform: 'capitalize' }}>
