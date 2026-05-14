@@ -4,13 +4,16 @@ import { useAuth } from '../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import OTPVerification from '../components/OTPVerification'; // We'll create this
 
 export default function LoginPage() {
   const { login, user: authUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [form, setForm]     = useState({ email: '', password: '' });
+  const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const [showOTP, setShowOTP] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,22 +29,32 @@ export default function LoginPage() {
     }
   };
 
-  // ── Google OAuth handler ────────────────────────────────────────────────────
+  // ── Google OAuth handler with OTP ────────────────────────────────────
   const handleGoogleSuccess = async (credentialResponse) => {
+    setLoading(true);
     try {
       const { data } = await axios.post(
         'http://localhost:8000/api/auth/google/',
         { token: credentialResponse.credential },
         { withCredentials: true }
       );
-      // Save tokens the same way as normal login
-      localStorage.setItem('access_token', data.access);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      // Force page reload so AuthContext picks up the new user
-      toast.success(`Welcome, ${data.user.full_name || data.user.email}!`);
-      window.location.href = searchParams.get('next') || '/';
+      
+      // Check if verification is required (first time user)
+      if (data.requires_verification) {
+        setPendingEmail(data.email);
+        setShowOTP(true);
+        toast.success('Verification code sent to your email!');
+      } else {
+        // Already verified user - login directly
+        localStorage.setItem('access_token', data.access);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        toast.success(`Welcome, ${data.user.full_name || data.user.email}!`);
+        window.location.href = searchParams.get('next') || '/';
+      }
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Google login failed.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -49,6 +62,31 @@ export default function LoginPage() {
     toast.error('Google sign-in was cancelled or failed.');
   };
 
+  const handleOTPVerified = (userData) => {
+    localStorage.setItem('access_token', userData.access);
+    localStorage.setItem('user', JSON.stringify(userData.user));
+    toast.success('Email verified successfully!');
+    window.location.href = searchParams.get('next') || '/';
+  };
+
+  // Show OTP verification screen if needed
+  if (showOTP) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', background: 'linear-gradient(135deg, #0a1e3d 0%, #1a3a5c 100%)' }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div style={{ background: 'white', borderRadius: 20, padding: '48px 40px', width: '100%', maxWidth: 440, boxShadow: '0 32px 80px rgba(0,0,0,0.3)' }}>
+            <OTPVerification 
+              email={pendingEmail}
+              onVerified={handleOTPVerified}
+              onBack={() => setShowOTP(false)}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Normal login screen
   return (
     <div style={{ minHeight: '100vh', display: 'flex', background: 'linear-gradient(135deg, #0a1e3d 0%, #1a3a5c 100%)' }}>
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -93,7 +131,7 @@ export default function LoginPage() {
             <Link to="/register" style={{ color: 'var(--blue)', fontWeight: 600 }}>Create one</Link>
           </p>
 
-          {/* ── Google Sign In Button at Bottom (Icon Only) ─────────────────── */}
+          {/* ── Google Sign In Button at Bottom ─────────────────────────────────── */}
           <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center' }}>
             <GoogleLogin
               onSuccess={handleGoogleSuccess}

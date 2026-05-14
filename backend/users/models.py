@@ -1,5 +1,8 @@
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+import random
+import string
+from django.utils import timezone
 
 
 class UserManager(BaseUserManager):
@@ -38,6 +41,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     role        = models.CharField(max_length=10, choices=ROLE_CHOICES, default='customer')
     is_active   = models.BooleanField(default=True)
     is_staff    = models.BooleanField(default=False)
+    is_verified = models.BooleanField(default=False)  # ADD THIS FIELD
     created_at  = models.DateTimeField(auto_now_add=True)
 
     objects = UserManager()
@@ -58,3 +62,22 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def is_customer(self):
         return self.role == 'customer'
+
+
+# ADD THIS OTP MODEL AT THE BOTTOM
+class OTPVerification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    otp_code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+    
+    @classmethod
+    def generate_otp(cls):
+        return ''.join(random.choices(string.digits, k=6))
+    
+    def is_valid(self):
+        return not self.is_used and self.expires_at > timezone.now()
+    
+    def __str__(self):
+        return f"{self.user.email} - {self.otp_code}"
