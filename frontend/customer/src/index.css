@@ -20,6 +20,7 @@
   --shadow-lg:  0 12px 40px rgba(15,43,76,0.18);
   --radius:     10px;
   --radius-lg:  16px;
+  
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
